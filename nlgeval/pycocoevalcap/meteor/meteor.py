@@ -32,7 +32,7 @@ class Meteor:
         # Used to guarantee thread safety
         self.lock = threading.Lock()
 
-        mem = '2G'
+        mem = '1G'
         mem_available_G = psutil.virtual_memory().available / 1E9
         if mem_available_G < 2:
             logging.warning("There is less than 2GB of available memory.\n"
