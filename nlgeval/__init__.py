@@ -83,6 +83,67 @@ def compute_metrics(hypothesis, references, no_overlap=False, no_skipthoughts=Fa
     return ret_scores
 
 
+def compute_metrics_from_string(hypothesis, references, no_overlap=False, no_skipthoughts=False, no_glove=False):
+    ref_list = [list(map(_strip, refs)) for refs in references]
+    refs = {idx: strippedlines for (idx, strippedlines) in enumerate(ref_list)}
+    hyps = {idx: [lines.strip()] for (idx, lines) in enumerate(hypothesis)}
+    assert len(refs) == len(hyps)
+
+    ret_scores = {}
+    if not no_overlap:
+        scorers = [
+            (Bleu(4), ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),
+            (Meteor(), "METEOR"),
+            (Rouge(), "ROUGE_L"),
+            (Cider(), "CIDEr")
+        ]
+        for scorer, method in scorers:
+            score, scores = scorer.compute_score(refs, hyps)
+            if isinstance(method, list):
+                for sc, scs, m in zip(score, scores, method):
+                    print("%s: %0.6f" % (m, sc))
+                    ret_scores[m] = sc
+            else:
+                print("%s: %0.6f" % (method, score))
+                ret_scores[method] = score
+            if isinstance(scorer, Meteor):
+                scorer.close()
+        del scorers
+
+    if not no_skipthoughts:
+        from nlgeval.skipthoughts import skipthoughts
+        import numpy as np
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        model = skipthoughts.load_model()
+        encoder = skipthoughts.Encoder(model)
+        vector_hyps = encoder.encode([h.strip() for h in hyp_list], verbose=False)
+        ref_list_T = np.array(ref_list).T.tolist()
+        vector_refs = map(lambda refl: encoder.encode([r.strip() for r in refl], verbose=False), ref_list_T)
+        cosine_similarity = list(map(lambda refv: cosine_similarity(refv, vector_hyps).diagonal(), vector_refs))
+        cosine_similarity = np.max(cosine_similarity, axis=0).mean()
+        print("SkipThoughtsCosineSimilarity: %0.6f" % (cosine_similarity))
+        ret_scores['SkipThoughtCS'] = cosine_similarity
+        del model
+
+    if not no_glove:
+        from nlgeval.word2vec.evaluate import eval_emb_metrics
+        import numpy as np
+
+        glove_hyps = [h.strip() for h in hyp_list]
+        ref_list_T = np.array(ref_list).T.tolist()
+        glove_refs = map(lambda refl: [r.strip() for r in refl], ref_list_T)
+        scores = eval_emb_metrics(glove_hyps, glove_refs)
+        print(scores)
+        scores = scores.split('\n')
+        for score in scores:
+            name, value = score.split(':')
+            value = float(value.strip())
+            ret_scores[name] = value
+
+    return ret_scores
+
+
 def compute_individual_metrics(ref, hyp, no_overlap=False, no_skipthoughts=False, no_glove=False):
     assert isinstance(hyp, six.string_types)
 
